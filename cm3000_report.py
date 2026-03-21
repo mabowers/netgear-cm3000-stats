@@ -54,6 +54,10 @@ def _us_power_cls(v):
     if 32 <= v <= 51:  return "poor"
     return "bad"
 
+def _uncorr_cls(v):
+    if v is None: return "na"
+    return "good" if v == 0 else "poor"
+
 def _priority_cls(s):
     if not s: return ""
     s = s.lower()
@@ -109,29 +113,31 @@ def _history_table(rows):
         "<tr>"
         '<th rowspan="3">Time</th>'
         '<th rowspan="3">Overall<br>Status</th>'
-        '<th rowspan="3">Connected</th>'
-        '<th colspan="5" class="hdr-group sep">Downstream &#8595;</th>'
+        '<th rowspan="3">Online</th>'
+        '<th colspan="7" class="hdr-group sep">Downstream &#8595;</th>'
         '<th colspan="3" class="hdr-group sep">Upstream &#8593;</th>'
         "</tr>\n<tr>"
         '<th rowspan="2" class="sep">Status</th>'
-        '<th colspan="2">Bonded (3.0)</th>'
-        '<th colspan="2">OFDM (3.1)</th>'
+        '<th colspan="3" class="sep-thin">Bonded (3.0)</th>'
+        '<th colspan="3" class="sep-thin">OFDM (3.1)</th>'
         '<th rowspan="2" class="sep">Status</th>'
-        "<th>Bonded (3.0)</th>"
-        "<th>OFDMA (3.1)</th>"
+        '<th class="sep-thin">Bonded (3.0)</th>'
+        '<th class="sep-thin">OFDMA (3.1)</th>'
         "</tr>\n<tr>"
-        "<th>Power (dBmV)</th>"
+        '<th class="sep-thin">Power (dBmV)</th>'
         "<th>SNR (dB)</th>"
-        "<th>Power (dBmV)</th>"
+        "<th>Uncorr. Errors</th>"
+        '<th class="sep-thin">Power (dBmV)</th>'
         "<th>SNR (dB)</th>"
-        "<th>Power (dBmV)</th>"
-        "<th>Power (dBmV)</th>"
+        "<th>Uncorr. Errors</th>"
+        '<th class="sep-thin">Power (dBmV)</th>'
+        '<th class="sep-thin">Power (dBmV)</th>'
         "</tr>\n"
     )
     out = ['<table class="history">', header]
     for (fid, fetched_at, status, conn_state, ds, us,
-         qam_avg_p, qam_avg_snr,
-         ofdm_p, ofdm_snr,
+         qam_avg_p, qam_avg_snr, bonded_uncorr,
+         ofdm_p, ofdm_snr, ofdm_uncorr,
          bonded_avg_p, ofdma_p) in rows:
         out.append("<tr>")
         out.append(_td(_fmt_ts(fetched_at), "mono"))
@@ -140,14 +146,16 @@ def _history_table(rows):
                        _connected_cls(conn_state)))
         # Downstream group
         out.append(_td(ds or "—", "sep " + _status_cls(ds)))
-        out.append(_td(_f1(qam_avg_p),   _ds_power_cls(qam_avg_p)    + " mono"))
+        out.append(_td(_f1(qam_avg_p),   "sep-thin " + _ds_power_cls(qam_avg_p) + " mono"))
         out.append(_td(_f1(qam_avg_snr), _qam_snr_cls(qam_avg_snr)   + " mono"))
-        out.append(_td(_f1(ofdm_p),      _ds_power_cls(ofdm_p)       + " mono"))
+        out.append(_td(bonded_uncorr if bonded_uncorr is not None else "—", _uncorr_cls(bonded_uncorr) + " mono"))
+        out.append(_td(_f1(ofdm_p),      "sep-thin " + _ds_power_cls(ofdm_p) + " mono"))
         out.append(_td(_f1(ofdm_snr),    _ofdm_snr_cls(ofdm_snr)     + " mono"))
+        out.append(_td(ofdm_uncorr if ofdm_uncorr is not None else "—", _uncorr_cls(ofdm_uncorr) + " mono"))
         # Upstream group
         out.append(_td(us or "—", "sep " + _status_cls(us)))
-        out.append(_td(_f1(bonded_avg_p), _us_power_cls(bonded_avg_p) + " mono"))
-        out.append(_td(_f1(ofdma_p),      _us_power_cls(ofdma_p)      + " mono"))
+        out.append(_td(_f1(bonded_avg_p), "sep-thin " + _us_power_cls(bonded_avg_p) + " mono"))
+        out.append(_td(_f1(ofdma_p),      "sep-thin " + _us_power_cls(ofdma_p) + " mono"))
         out.append("</tr>\n")
     out.append("</table>")
     return "\n".join(out)
@@ -369,8 +377,11 @@ tr:nth-child(even) td { background: #fafafa; }
 th.hdr-group { background: #2c4470; }
 
 /* Group separator — white gap between Modem/DS and DS/US columns */
-td.sep { border-left: 3px solid #ccc; }
-th.sep { border-left: 3px solid rgba(255,255,255,0.35); }
+td.sep     { border-left: 4px solid #ccc; }
+th.sep     { border-left: 4px solid rgba(255,255,255,0.35); }
+/* Thin separator between sub-groups within a direction */
+td.sep-thin { border-left: 1px solid #ccc; }
+th.sep-thin { border-left: 1px solid rgba(255,255,255,0.35); }
 
 @media print {
     @page { margin: 1cm; }
@@ -416,8 +427,8 @@ def build_report(conn, hours):
     history = conn.execute("""
         SELECT f.id, f.fetched_at, f.status, f.connectivity_state,
                f.ds_status, f.us_status,
-               AVG(d.power_dbmv),  AVG(d.snr_db),
-               MIN(o.power_dbmv),  MIN(o.snr_db),
+               AVG(d.power_dbmv),  AVG(d.snr_db),  SUM(d.uncorrectables),
+               MIN(o.power_dbmv),  MIN(o.snr_db),  SUM(o.uncorrectable),
                AVG(u.power_dbmv),
                MIN(a.power_dbmv)
         FROM fetches f
@@ -473,7 +484,7 @@ def build_report(conn, hours):
 <h2>Modem History &mdash; Last {hours} Hours</h2>
 <p class="meta">
   <u>DS power</u>: &plusmn;10&nbsp;dBmV good, &plusmn;15 poor. <u>Bonded SNR</u>: &ge;33&nbsp;dB good, &ge;30 poor. <u>OFDM SNR</u>: &ge;36&nbsp;dB good, &ge;33 poor. <u>US power</u>: 35&ndash;48&nbsp;dBmV good, 32&ndash;51 poor.<br>
-  Bonded values are averaged across all locked channels. OFDM/OFDMA are the primary DOCSIS&nbsp;3.1 channels.
+  Across all locked, bonded channels: power and SNR are averaged, uncorrectable errors are summed. OFDM/OFDMA are the primary DOCSIS&nbsp;3.1 channels.
 </p>
 <div class="scroll">
 {_history_table(history)}
