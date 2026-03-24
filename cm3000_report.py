@@ -58,6 +58,12 @@ def _uncorr_cls(v):
     if v is None: return "na"
     return "good" if v == 0 else "poor"
 
+def _uncorr_delta_td(delta):
+    """Return (display_value, css_class) for an uncorrectable error delta."""
+    if delta is None: return "—", "na"
+    if delta < 0:     return "↓", "na"
+    return delta, _uncorr_cls(delta)
+
 def _priority_cls(s):
     if not s: return ""
     s = s.lower()
@@ -126,19 +132,28 @@ def _history_table(rows):
         "</tr>\n<tr>"
         '<th class="sep-thin">Power (dBmV)</th>'
         "<th>SNR (dB)</th>"
-        "<th>Uncorr. Errors</th>"
+        "<th>&Delta; Uncorr. Errors</th>"
         '<th class="sep-thin">Power (dBmV)</th>'
         "<th>SNR (dB)</th>"
-        "<th>Uncorr. Errors</th>"
+        "<th>&Delta; Uncorr. Errors</th>"
         '<th class="sep-thin">Power (dBmV)</th>'
         '<th class="sep-thin">Power (dBmV)</th>'
         "</tr>\n"
     )
     out = ['<table class="history">', header]
-    for (fid, fetched_at, status, conn_state, ds, us,
-         qam_avg_p, qam_avg_snr, bonded_uncorr,
-         ofdm_p, ofdm_snr, ofdm_uncorr,
-         bonded_avg_p, ofdma_p) in rows:
+    for i, (fid, fetched_at, status, conn_state, ds, us,
+            qam_avg_p, qam_avg_snr, bonded_uncorr,
+            ofdm_p, ofdm_snr, ofdm_uncorr,
+            bonded_avg_p, ofdma_p) in enumerate(rows):
+        # Compute deltas against the next (older) row; show — for the oldest row.
+        if i + 1 < len(rows):
+            prev = rows[i + 1]
+            prev_bonded_uncorr, prev_ofdm_uncorr = prev[8], prev[11]
+            bonded_delta = (bonded_uncorr - prev_bonded_uncorr) if (bonded_uncorr is not None and prev_bonded_uncorr is not None) else None
+            ofdm_delta   = (ofdm_uncorr   - prev_ofdm_uncorr)   if (ofdm_uncorr   is not None and prev_ofdm_uncorr   is not None) else None
+        else:
+            bonded_delta = None
+            ofdm_delta   = None
         out.append("<tr>")
         out.append(_td(_fmt_ts(fetched_at), "mono"))
         out.append(_td(status or "—", _status_cls(status)))
@@ -148,10 +163,12 @@ def _history_table(rows):
         out.append(_td(ds or "—", "sep " + _status_cls(ds)))
         out.append(_td(_f1(qam_avg_p),   "sep-thin " + _ds_power_cls(qam_avg_p) + " mono"))
         out.append(_td(_f1(qam_avg_snr), _qam_snr_cls(qam_avg_snr)   + " mono"))
-        out.append(_td(bonded_uncorr if bonded_uncorr is not None else "—", _uncorr_cls(bonded_uncorr) + " mono"))
+        bonded_val, bonded_cls = _uncorr_delta_td(bonded_delta)
+        out.append(_td(bonded_val, bonded_cls + " mono"))
         out.append(_td(_f1(ofdm_p),      "sep-thin " + _ds_power_cls(ofdm_p) + " mono"))
         out.append(_td(_f1(ofdm_snr),    _ofdm_snr_cls(ofdm_snr)     + " mono"))
-        out.append(_td(ofdm_uncorr if ofdm_uncorr is not None else "—", _uncorr_cls(ofdm_uncorr) + " mono"))
+        ofdm_val, ofdm_cls = _uncorr_delta_td(ofdm_delta)
+        out.append(_td(ofdm_val, ofdm_cls + " mono"))
         # Upstream group
         out.append(_td(us or "—", "sep " + _status_cls(us)))
         out.append(_td(_f1(bonded_avg_p), "sep-thin " + _us_power_cls(bonded_avg_p) + " mono"))
