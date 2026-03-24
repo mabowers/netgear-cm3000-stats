@@ -10,6 +10,33 @@ import sqlite3
 import sys
 
 
+# ── Modem clock offset ────────────────────────────────────────────────────────
+
+def _fmt_clock_offset(fetched_at_str, modem_time_str):
+    """Return a human-readable clock offset note, or None if unavailable."""
+    if not modem_time_str:
+        return None
+    try:
+        fetched = datetime.datetime.fromisoformat(fetched_at_str).replace(tzinfo=None)
+        modem   = datetime.datetime.fromisoformat(modem_time_str)
+        diff    = int((fetched - modem).total_seconds())
+        if diff == 0:
+            return None
+        direction = "behind" if diff > 0 else "ahead of"
+        secs = abs(diff)
+        hours, rem = divmod(secs, 3600)
+        minutes, seconds = divmod(rem, 60)
+        if hours:
+            offset = f"{hours}h {minutes}m"
+        elif minutes:
+            offset = f"{minutes}m {seconds}s"
+        else:
+            offset = f"{seconds}s"
+        return f"NOTE: Modem clock appears to be {offset} {direction} fetch time. Event timestamps are as recorded by the modem."
+    except (ValueError, TypeError):
+        return None
+
+
 # ── Color-coding helpers ──────────────────────────────────────────────────────
 # Three levels matching the modem's own language: Good (green) / Poor (amber) / Bad (red)
 
@@ -458,15 +485,20 @@ def build_report(conn, hours):
         ORDER BY f.fetched_at DESC
     """, (cutoff,)).fetchall()
 
-    latest = conn.execute("""
+    has_modem_time = any(row[1] == "modem_time"
+                         for row in conn.execute("PRAGMA table_info(fetches)"))
+
+    latest = conn.execute(f"""
         SELECT id, fetched_at, status, cm_status, ds_status, us_status,
                acquire_ds_freq_hz, acquire_ds_status, connectivity_state,
                boot_state, security, ip_prov_mode, raw_file
+               {"," + "modem_time" if has_modem_time else ""}
         FROM fetches ORDER BY fetched_at DESC LIMIT 1
     """).fetchone()
 
     latest_id = latest[0] if latest else None
     latest_ts = _fmt_ts(latest[1], tz=True) if latest else "—"
+    clock_note = _fmt_clock_offset(latest[1], latest[13]) if (latest and has_modem_time) else None
 
     def latest_rows(table):
         if latest_id is None:
@@ -533,7 +565,7 @@ def build_report(conn, hours):
 </div>
 
 <h2>Event Log</h2>
-<p class="meta">In the order recorded by the modem. &ldquo;Time Not Established&rdquo; entries appear where the modem logged them (before clock sync).</p>
+{"<p class=\"meta\">" + clock_note + "</p>" if clock_note else ""}
 <div class="scroll">
 {_events_table(events)}
 </div>

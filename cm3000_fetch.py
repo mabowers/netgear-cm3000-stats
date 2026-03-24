@@ -111,7 +111,8 @@ def _split_sections(text):
 
 
 def _parse_diag_section(lines):
-    result = {"status": None, "cm_status": None, "ds_status": None, "us_status": None}
+    result = {"status": None, "cm_status": None, "ds_status": None, "us_status": None,
+              "modem_time": None}
     for line in lines:
         s = line.strip()
         for key, pat in [
@@ -123,6 +124,13 @@ def _parse_diag_section(lines):
             m = re.match(pat, s)
             if m and result[key] is None:
                 result[key] = m.group(1).strip()
+        m = re.match(r"^Current Time:\s+(.+)", s)
+        if m:
+            try:
+                dt = datetime.datetime.strptime(m.group(1).strip(), "%a %b %d %H:%M:%S %Y")
+                result["modem_time"] = dt.isoformat(timespec="seconds")
+            except ValueError:
+                pass
     return result
 
 
@@ -273,7 +281,7 @@ def parse_cable_info(text):
 
 # ── Database ──────────────────────────────────────────────────────────────────
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS fetches (
@@ -289,7 +297,8 @@ CREATE TABLE IF NOT EXISTS fetches (
     boot_state          TEXT,
     security            TEXT,
     ip_prov_mode        TEXT,
-    raw_file            TEXT
+    raw_file            TEXT,
+    modem_time          TEXT
 );
 CREATE TABLE IF NOT EXISTS ds_channels (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -357,6 +366,11 @@ def init_db(conn):
         conn.executescript(_SCHEMA)
         conn.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
         conn.commit()
+    elif current == 1:
+        # Migrate v1 → v2: add modem_time column.
+        conn.execute("ALTER TABLE fetches ADD COLUMN modem_time TEXT")
+        conn.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
+        conn.commit()
     elif current != _SCHEMA_VERSION:
         raise SystemExit(
             f"Database schema version mismatch: file is v{current}, "
@@ -372,13 +386,13 @@ def write_to_db(conn, fetched_at, parsed, raw_file):
         """INSERT INTO fetches
            (fetched_at, status, cm_status, ds_status, us_status,
             acquire_ds_freq_hz, acquire_ds_status, connectivity_state,
-            boot_state, security, ip_prov_mode, raw_file)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            boot_state, security, ip_prov_mode, raw_file, modem_time)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (fetched_at,
          diag["status"], diag["cm_status"], diag["ds_status"], diag["us_status"],
          startup["acquire_ds_freq_hz"], startup["acquire_ds_status"],
          startup["connectivity_state"], startup["boot_state"],
-         startup["security"], startup["ip_prov_mode"], raw_file),
+         startup["security"], startup["ip_prov_mode"], raw_file, diag["modem_time"]),
     )
     fid = cur.lastrowid
 
