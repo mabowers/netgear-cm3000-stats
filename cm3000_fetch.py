@@ -462,9 +462,10 @@ def main():
 
     fetched_at = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
     filename = fetched_at.replace(":", "_") + "-CableInfo.txt"
+    date_dir = os.path.join(args.data_dir, fetched_at[:10])
 
-    os.makedirs(args.data_dir, exist_ok=True)
-    raw_path = os.path.join(args.data_dir, filename)
+    os.makedirs(date_dir, exist_ok=True)
+    raw_path = os.path.join(date_dir, filename)
     with open(raw_path, "w", encoding="utf-8") as f:
         f.write(content)
     print(f"Saved: {raw_path}", file=sys.stderr)
