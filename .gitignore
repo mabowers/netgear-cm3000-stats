@@ -3,3 +3,4 @@ data/
 report.html
 .cm3000_password
 *.log
+.DS_Store

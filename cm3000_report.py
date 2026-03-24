@@ -424,20 +424,20 @@ def build_report(conn, hours):
     # Fetch history: average locked channels per signal type.
     # QAM/Bonded: AVG across all locked channels (32 DS QAM, 4 US bonded).
     # OFDM/OFDMA: single locked channel, so MIN() == the value.
+    # (Subqueries instead of JOINs to keep aggregates across tables independent.)
     history = conn.execute("""
         SELECT f.id, f.fetched_at, f.status, f.connectivity_state,
                f.ds_status, f.us_status,
-               AVG(d.power_dbmv),  AVG(d.snr_db),  SUM(d.uncorrectables),
-               MIN(o.power_dbmv),  MIN(o.snr_db),  SUM(o.uncorrectable),
-               AVG(u.power_dbmv),
-               MIN(a.power_dbmv)
+               (SELECT AVG(power_dbmv)     FROM ds_channels       WHERE fetch_id=f.id AND lock_status='Locked'),
+               (SELECT AVG(snr_db)         FROM ds_channels       WHERE fetch_id=f.id AND lock_status='Locked'),
+               (SELECT SUM(uncorrectables) FROM ds_channels       WHERE fetch_id=f.id AND lock_status='Locked'),
+               (SELECT MIN(power_dbmv)     FROM ds_ofdm_channels  WHERE fetch_id=f.id AND lock_status='Locked'),
+               (SELECT MIN(snr_db)         FROM ds_ofdm_channels  WHERE fetch_id=f.id AND lock_status='Locked'),
+               (SELECT MIN(uncorrectable)  FROM ds_ofdm_channels  WHERE fetch_id=f.id AND lock_status='Locked'),
+               (SELECT AVG(power_dbmv)     FROM us_channels        WHERE fetch_id=f.id AND lock_status='Locked'),
+               (SELECT MIN(power_dbmv)     FROM us_ofdma_channels  WHERE fetch_id=f.id AND lock_status='Locked')
         FROM fetches f
-        LEFT JOIN ds_channels       d ON d.fetch_id = f.id AND d.lock_status = 'Locked'
-        LEFT JOIN ds_ofdm_channels  o ON o.fetch_id = f.id AND o.lock_status = 'Locked'
-        LEFT JOIN us_channels       u ON u.fetch_id = f.id AND u.lock_status = 'Locked'
-        LEFT JOIN us_ofdma_channels a ON a.fetch_id = f.id AND a.lock_status = 'Locked'
         WHERE f.fetched_at >= ?
-        GROUP BY f.id
         ORDER BY f.fetched_at DESC
     """, (cutoff,)).fetchall()
 
