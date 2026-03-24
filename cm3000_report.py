@@ -209,20 +209,21 @@ def _startup_table(fetch):
     if not fetch:
         return "<p>No data.</p>"
     (fid, fetched_at, status, cm, ds, us,
-     acq_freq, acq_status, conn, boot, sec, ip, raw) = fetch
+     acq_freq, acq_status, conn, boot, sec, ip, raw, *_) = fetch
+    def _acq():
+        if not acq_freq: return "—"
+        return f"{_fmt_mhz(acq_freq)} MHz {acq_status}".strip() if acq_status else f"{_fmt_mhz(acq_freq)} MHz"
     rows = [
-        ("Acquire Downstream Channel",
-         f"{_fmt_mhz(acq_freq)} MHz" if acq_freq else "—", acq_status or "—"),
-        ("Connectivity State",   conn or "—", ""),
-        ("Boot State",           boot or "—", ""),
-        ("Security",             sec  or "—", ""),
-        ("IP Provisioning Mode", ip   or "—", ""),
+        ("Acquire Downstream Channel", _acq()),
+        ("Connectivity State",         conn or "—"),
+        ("Boot State",                 boot or "—"),
+        ("Security",                   sec  or "—"),
+        ("IP Provisioning Mode",       ip   or "—"),
     ]
-    out = ["<table style='width: auto;'>", _th("Procedure", "Value", "Status")]
-    for label, val, extra in rows:
+    out = ["<table style='width: auto;'>", _th("Procedure", "Value")]
+    for label, val in rows:
         out.append(f"<tr><td>{label}</td>"
-                   f'<td class="mono">{_esc(val)}</td>'
-                   f"<td>{_esc(extra)}</td></tr>\n")
+                   f'<td class="mono">{_esc(val)}</td></tr>\n')
     out.append("</table>")
     return "\n".join(out)
 
