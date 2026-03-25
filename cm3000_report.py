@@ -184,7 +184,7 @@ def _history_table(rows):
         out.append("<tr>")
         out.append(_td(_fmt_ts(fetched_at), "mono"))
         out.append(_td(status or "—", _status_cls(status)))
-        out.append(_td("Yes" if conn_state and "operational" in conn_state.lower() else (conn_state or "—"),
+        out.append(_td("Yes" if conn_state and "operational" in conn_state.lower() else "No",
                        _connected_cls(conn_state)))
         # Downstream group
         out.append(_td(ds or "—", "sep " + _status_cls(ds)))
